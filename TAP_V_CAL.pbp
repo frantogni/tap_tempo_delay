@@ -1,0 +1,131 @@
+@__config _CONFIG1,0x2004
+@__config _CONFIG2,0x3fff
+   
+OSCCON      = %01110111 
+TRISA       = %10001111
+TRISB       = %00000000
+TRISC       = %00010000
+WPUB        = %00000000                 
+OPTION_REG  = %00000000
+INTCON      = %11000000
+IOCB        = %00000000
+PIE1        = %00000000
+PIE2        = %00000000
+PIR1        = %00000000
+PIR2        = %00000000
+ANSEL       = %00001011
+ANSELH      = %00000000
+ADCON0      = %00000001
+ADCON1      = %10000000
+CM1CON0     = %10100001
+CM2CON0     = %00000000
+CM2CON1     = %00000000
+SRCON       = %00000000
+T1CON       = %00000000
+CCP1CON     = %00001111
+CCP2CON     = %00000000
+ECCPAS      = %00000000
+PSTRCON     = %00000001
+
+on interrupt goto interrupcion
+
+DEFINE  LCD_DREG        PORTB
+DEFINE  LCD_DBIT        4
+DEFINE  LCD_BITS        4
+DEFINE  LCD_RSREG       PORTB
+DEFINE  LCD_RSBIT       3
+DEFINE  LCD_EREG        PORTB
+DEFINE  LCD_EBIT        2
+DEFINE  LCD_LINES       4
+DEFINE  LCD_COMMANDUS   2000  
+DEFINE  LCD_DATAUS      50
+
+pause 1000
+
+VALOR_PR        VAR WORD
+BUCLE           VAR BYTE
+DESBORDE        VAR BYTE
+DELAY           VAR BYTE
+
+INICIO:        
+    DESBORDE        = 0               
+    TMR1H           = 0
+    TMR1L           = 0
+    PIE1.0          = 1                                                                                             
+    T1CON.0         = 1
+    ADRESL          = 0
+    ADRESH          = 0
+    DELAY           = 0
+                                      
+    lcdout $fe,1
+    lcdout $FE,$80,"init"
+    pause 1000
+    lcdout $fe,1
+    
+    delay = 255
+    HPWM 1,DELAY,255
+    pause 1000
+aca:     
+    PIE1.0          = 0
+    T1CON.0         = 0
+    PIE1.0          = 1                                                                                             
+    T1CON.0         = 1                  
+    FREQOUT PORTA.6,2,500
+a:
+    IF CM1CON0.6 = 0 THEN a                               
+    T1CON.0     = 0
+    PIE1.0      = 0    
+    VALOR_PR.BYTE0 = TMR1L
+    VALOR_PR.BYTE1 = TMR1H                
+                                
+    lcdout $FE,$80,DEC3 DELAY,$FE,$C0,DEC2 DESBORDE,$FE,$C3,DEC5 VALOR_PR
+        
+    TMR1L = 0
+    TMR1H = 0
+    DESBORDE = 0
+    PAUSE 1000       
+    if portc.4 = 1 then goto calibracion
+    goto aca    
+    
+        
+CALIBRACION:
+    delay = 0
+    HPWM 1,DELAY,255
+    pause 1000
+    PIE1.0          = 0
+    T1CON.0         = 0                             
+PULSO:        
+    PIE1.0          = 1                                                                                             
+    T1CON.0         = 1                           
+    FREQOUT PORTA.6,2,1500
+B:
+    IF CM1CON0.6 = 0 THEN B                               
+    T1CON.0     = 0
+    PIE1.0      = 0    
+    VALOR_PR.BYTE0 = TMR1L
+    VALOR_PR.BYTE1 = TMR1H                
+                                
+    lcdout $FE,$80,DEC3 DELAY,$FE,$C0,DEC2 DESBORDE,$FE,$C3,DEC5 VALOR_PR
+        
+    TMR1L = 0
+    TMR1H = 0
+    DESBORDE = 0
+    
+    DELAY = DELAY - 1
+    HPWM 1,DELAY,255
+    PAUSE 1000    
+
+    GOTO PULSO   
+                             
+disable    
+INTERRUPCION:           
+                            
+    if ((PIE1.0 = 1) AND (PIR1.0 = 1)) THEN
+        DESBORDE    = DESBORDE + 1                       
+        PIR1.0      = 0                       
+    ENDIF
+        
+RESUME
+ENABLE           
+
+END

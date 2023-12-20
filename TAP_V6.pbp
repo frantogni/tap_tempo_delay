@@ -1,0 +1,186 @@
+' configuracion : 000011000100
+   
+OSCCON      = %01110111
+TRISIO      = %00011000
+ANSEL       = %00001000
+ADCON0      = %10001101
+CMCON0      = %00000111
+CMCON1      = %00000000
+OPTION_REG  = %00000000
+INTCON      = %11000000
+PIE1        = %00000000
+PIR1        = %00000000
+T1CON       = %00010100
+CCP1CON     = %00001110
+
+on interrupt goto interrupcion
+
+VALOR_PR        VAR WORD
+VALOR2          VAR WORD
+VALOR3          VAR WORD
+VALOR4          VAR WORD
+BUCLE           VAR BYTE
+BUCLE1          VAR BYTE
+BUCLE2          VAR BYTE
+BUCLE3          VAR BYTE
+DESBORDE        VAR BYTE
+CLICKS          VAR BYTE
+TIEMPO          VAR WORD
+DELAY           VAR BYTE
+ANALOGO         VAR WORD
+FLASH           VAR BIT
+
+INICIO:        
+
+    CCPR1L          = 0
+    CCPR1H          = 0
+    CLICKS          = 0
+    ADRESL          = 0
+    ADRESH          = 0
+    ANALOGO         = 0    
+    FLASH           = 0
+    GPIO.0          = 0
+                                      
+                             
+MAIN:
+
+    adcon0.1 = 1
+esp:    
+    if pir1.6 = 0 then esp
+    analogo = adresl + (255 * adresh)
+    delay = analogo / 4
+    hpwm 1,delay,10000
+    
+    pause 200
+    
+    goto main
+    
+
+    IF FLASH = 1 THEN
+UNO:              
+        IF TMR1L <> VALOR_PR.BYTE0 THEN UNO
+DOS:             
+        IF TMR1H <> Valor_pr.byte1 then DOS
+                   
+        T1CON.0     = 0
+        TMR1H       = 0
+        TMR1L       = 0
+        DESBORDE    = 0
+        T1CON.0     = 1            
+        GPIO.0 = 1
+        pausEUS 500
+        GPIO.0 = 0                
+        FLASH = 0
+    endif
+        
+
+    IF (GPIO.3 = 0) THEN    
+        GOSUB AR
+        clicks = clicks + 1
+        select case clicks
+            case 1
+                T1CON.0     = 0
+                PIE1        = 0
+                PIR1        = 0                
+                TMR1H       = 0
+                TMR1L       = 0
+                DESBORDE    = 0
+                BUCLE       = 0
+                BUCLE1      = 0
+                BUCLE2      = 0
+                BUCLE3      = 0
+                VALOR2      = 0
+                VALOR3      = 0
+                VALOR4      = 0
+                VALOR_PR    = 0
+                PIE1.0      = 1                               
+                T1CON.0     = 1
+                                                
+            case 2
+                T1CON.0         = 0
+                PIE1            = 0                
+                PIR1            = 0                                                           
+                VALOR2.BYTE0    = TMR1L
+                VALOR2.BYTE1    = TMR1H
+                TMR1H           = 0
+                TMR1L           = 0                
+                BUCLE1          = DESBORDE
+                DESBORDE        = 0
+                PIE1.0          = 1                
+                T1CON.0         = 1
+                                                               
+            case 3
+                T1CON.0         = 0
+                PIE1            = 0                
+                PIR1            = 0                                            
+                VALOR3.BYTE0    = TMR1L
+                VALOR3.BYTE1    = TMR1H
+                TMR1H           = 0
+                TMR1L           = 0                                 
+                BUCLE2          = DESBORDE
+                DESBORDE        = 0
+                PIE1.0          = 1                
+                T1CON.0         = 1
+                
+            case 4                                                   
+                T1CON.0         = 0
+                PIE1            = 0                
+                PIR1            = 0                            
+                VALOR4.BYTE0    = TMR1L
+                VALOR4.BYTE1    = TMR1H                                 
+                BUCLE3          = DESBORDE
+                
+                BUCLE = (BUCLE1 + BUCLE2 + BUCLE3)
+                BUCLE = BUCLE / 3
+                                   
+                if bucle > 7 then bucle = 7
+                                       
+                valor_pr    = (VALOR2.BYTE0 + VALOR3.BYTE0 + VALOR4.BYTE0) 
+                VALOR_PR    = (VALOR_PR) / 3
+                CCPR1L      = VALOR_PR.BYTE0                
+                valor_pr    = (VALOR2.BYTE1 + VALOR3.BYTE1 + VALOR4.BYTE1) 
+                VALOR_PR    = (VALOR_PR) / 3 
+                CCPR1H      = VALOR_PR.BYTE0
+                
+                VALOR_PR.BYTE0  = CCPR1L
+                VALOR_PR.BYTE1  = CCPR1H
+                
+                ANALOGO = VALOR_PR / 10
+                TIEMPO = 6553 * BUCLE
+                TIEMPO = TIEMPO + ANALOGO
+                DELAY = TIEMPO / 255
+                
+                HPWM 1,DELAY,255                
+                                                                                                                                                                                                                                                                                                                        
+                DESBORDE        = 0
+                clicks          = 0                
+                TMR1H           = 0
+                TMR1L           = 0
+                PIE1.0          = 1                                                                                             
+                T1CON.0         = 1                                                                                                                                                                                                     
+                 
+        end select
+        
+    endif              
+                                                                               
+    goto main   
+    
+AR:
+    REPEAT
+    PAUSE 100     
+    UNTIL GPIO.3 = 1
+    RETURN   
+                             
+disable    
+INTERRUPCION:           
+                            
+    if ((PIE1.0 = 1) AND (PIR1.0 = 1)) THEN
+        DESBORDE    = DESBORDE + 1
+        IF DESBORDE = BUCLE THEN FLASH = 1                       
+        PIR1.0      = 0                       
+    ENDIF
+        
+RESUME
+ENABLE            
+
+END
