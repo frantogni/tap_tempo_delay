@@ -1,0 +1,130 @@
+@ __CONFIG _CONFIG1, 0x23C4
+@ __CONFIG _CONFIG2, 0x0700          
+
+OSCCON      = %01110111 
+TRISA       = %00010111
+TRISB       = %00000000
+TRISC       = %00000000
+WPUB        = %00000000                 
+OPTION_REG  = %00100011
+INTCON      = %11100000		
+IOCB        = %00000000		
+PIE1        = %00000001             
+PIE2        = %00000000		
+PIR1        = %00000000
+PIR2        = %00000000
+ANSEL       = %00000001
+ANSELH      = %00000000
+ADCON0      = %11000001
+ADCON1      = %10000000
+CM1CON0     = %00000000		
+CM2CON0     = %00000000
+CM2CON1     = %00000000
+VRCON		= %00000000		
+SRCON       = %00000000
+T1CON       = %00000000
+CCP1CON     = %00001100
+CCP2CON     = %00000000
+ECCPAS      = %00000000
+PSTRCON     = %00000001
+SSPCON      = %00000101
+
+on interrupt goto interrupcion
+
+TBP_SW      VAR PORTA.1
+TAP_SW      VAR PORTA.2
+TAIL        VAR PORTC.4
+TBP         VAR PORTC.5
+LED_TAP     VAR PORTA.7
+LED_TBP     VAR PORTA.6
+LED_TAIL    VAR PORTC.0
+
+ADC_A       VAR WORD
+ADC_L       VAR WORD
+VALOR       VAR WORD[10]
+BUCLE       VAR BYTE[10]
+VALOR_P     VAR WORD
+BUCLE_P     VAR BYTE
+CONTADOR    VAR BYTE
+DELAY       VAR BYTE
+CLICKS      VAR BYTE
+
+DESBORDE    VAR BYTE
+TAIL_ACT    VAR BIT
+
+INICIO:
+
+	PORTA		= 0
+	PORTB		= 0
+	PORTC		= 0
+    TAIL        = 0
+    TBP         = 0                        
+    BUCLE_P     = 19
+    VALOR_P     = 65530
+    adc_a       = 0
+    adc_l       = 100
+    CONTADOR    = 0    
+    CLICKS      = 0
+    T1CON.0     = 0        	                           
+    TMR1H       = 0
+    TMR1L       = 0
+    
+    DESBORDE = 0
+    TAIL_ACT = 1                                                                                                         
+    HPWM 1,255,10000	    
+
+
+MAIN:
+    IF TBP_SW = 0 THEN
+        T1CON.0 = 1
+AR_TBP: IF TBP_SW = 0 THEN GOTO AR_TBP
+        T1CON.0 = 0
+        IF DESBORDE > 30 THEN 
+            TOGGLE TAIL_ACT	    		
+  		    DESBORDE = 0
+        ENDIF
+        TOGGLE TAIL
+        IF TAIL_ACT = 0 THEN TBP = TAIL
+        IF TAIL_ACT = 1 THEN TBP = 1                                 				    		             					                                     
+	ENDIF
+	
+    IF CLICKS = 0 AND TAIL = 0 THEN 
+        ADRESH      = 0
+        ADRESL      = 0                
+        ADCON0.1    = 1   
+LEC:    if PIR1.6 = 0 then LEC
+        PIR1.6 = 0                
+
+        adc_a = 0
+        adc_a = ADRESH * 255 
+        adc_a = adc_a + ADRESL        
+        
+        if adc_a < (adc_l - 5) or adc_a > (adc_l + 5) then
+            adc_l = adc_a        
+            delay = adc_a / 4                              
+            HPWM 1,delay,10000
+        endif
+    ENDIF 	
+    
+    goto MAIN       															
+			                           
+           
+''''''''''''''''''''''''''''''''''''''''''''''''                                                                                                      
+                                                  
+disable    
+INTERRUPCION:
+    IF PIR1.0 = 1 THEN DESBORDE = DESBORDE + 1
+    IF DESBORDE = 30 THEN TOGGLE LED_TAIL
+    IF INTCON.2 = 1 THEN
+        contador = contador + 1
+        if contador = 168 then 
+            pulsout LED_TAP,100
+            contador = 0
+        endif
+    ENDIF                                                     				             								 														                                                                                               
+    INTCON.2 = 0 ; FLAG TMR0
+    PIR1.0 = 0    				                                                            
+RESUME
+ENABLE          
+
+END

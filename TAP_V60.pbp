@@ -1,0 +1,215 @@
+OSCCON      = %01110111 
+TRISA       = %00010111
+TRISB       = %00000000
+TRISC       = %00000000
+WPUB        = %00000000                 
+OPTION_REG  = %00100011
+INTCON      = %11100000		
+IOCB        = %00000000		
+PIE1        = %00000000             
+PIE2        = %00000000		
+PIR1        = %00000000
+PIR2        = %00000000
+ANSEL       = %00000001
+ANSELH      = %00000000
+ADCON0      = %11000001
+ADCON1      = %10000000
+CM1CON0     = %00000000		
+CM2CON0     = %00000000
+CM2CON1     = %00000000
+VRCON		= %00000000		
+SRCON       = %00000000
+T1CON       = %00000000
+CCP1CON     = %00001100
+CCP2CON     = %00000000
+ECCPAS      = %00000000
+PSTRCON     = %00000001
+SSPCON      = %00000101
+
+on interrupt goto interrupcion
+
+tbp_sw      VAR PORTA.1
+tap_sw      VAR PORTA.2
+tbp         VAR PORTB.0
+tail        VAR PORTB.1
+led_tap     VAR PORTA.7
+led_tbp     VAR PORTA.6
+
+adc_a       VAR WORD
+adc_l       VAR WORD
+contador    VAR BYTE
+delay       VAR BYTE
+TIEMPO      VAR WORD
+VALOR_PR    VAR WORD
+BUCLE_PR    VAR BYTE
+VALOR       VAR WORD[10]
+BUCLE       VAR BYTE[10]
+CLICKS      VAR BYTE
+DESBORDE    VAR BYTE
+DIVISION    VAR WORD
+
+DUMMY       VAR BYTE	;DUMMY.0=POTE DELAY/DIV, DUMMY.1 = FLASH, DUMMY.2=OCUPADO
+
+INICIO:
+    T1CON.0     = 0
+	PORTA		= 0
+	PORTB		= 0
+	PORTC		= 0
+    TAIL        = 1
+    TBP         = 1                    
+    TIEMPO      = 65534    
+    BUCLE_PR    = 19
+    VALOR_PR    = 65530
+    DIVISION    = 0
+    adc_a       = 0
+    adc_l       = 10
+    CONTADOR    = 0    
+    DUMMY       = 0
+    CLICKS      = 0    
+    DESBORDE    = 0	                           
+    TMR1H       = 0
+    TMR1L       = 0                                                                                                         
+    T1CON.0     = 0	    
+
+main:
+
+    IF TBP_SW = 0 THEN
+AR_TBP: IF TBP_SW = 0 THEN AR_TBP	    		
+  		TOGGLE TBP
+        toggle tail 
+        LED_TBP = NOT TBP                 				    		             					                                     
+	ENDIF
+	
+    IF CLICKS = 0 AND TBP = 0 THEN 
+        ADRESH      = 0
+        ADRESL      = 0                
+        ADCON0.1    = 1   
+LEC:    if PIR1.6 = 0 then LEC
+        PIR1.6 = 0                
+
+        adc_a = ADRESH * 255 
+        adc_a = adc_a + ADRESL        
+        
+        if (adc_a < adc_l - 5) or (adc_a > adc_l + 5) then
+            adc_l = adc_a        
+            delay = adc_a / 4                              
+            HPWM 1,delay,8000
+        endif
+    ENDIF 	
+
+    goto main
+           
+    
+    if TAP_SW = 0 then
+		CONTADOR = 0    
+AR_TAP:	PAUSE 100
+        CONTADOR = CONTADOR + 1
+        IF CONTADOR => 10 THEN
+       	    lED_TAP	    = 1
+            GOSUB ANALOGICA
+            ;IF ((ANA_TIE < (AUX_TIE - 2))OR(ANA_TIE > (AUX_TIE + 2))) THEN 
+                ;AUX_TIE = ANA_TIE
+                select case dummy
+                    case is < 210       
+            	       DIVISION = (TIEMPO / 3)                                   
+                    case is < 600
+            	       DIVISION = (TIEMPO / 2)
+               	    case is < 925
+             	       DIVISION = (TIEMPO / 3) * 2      
+               	    case is < 980
+             	       DIVISION = (TIEMPO / 4) * 3       
+               	    case is => 980
+             	       DIVISION = TIEMPO              
+                end select
+            ;endif
+            gosub RANGO
+        endif
+		IF tap_sw = 0 THEN AR_TAP
+                    							   	                                                                            		
+        IF (CONTADOR => 10) THEN                        
+            TMR1H       = 0
+            TMR1L       = 0
+            DESBORDE    = 0
+            T1CON.0		= 1
+            lED_TAP	    = 0        
+        endif
+        
+        IF (CONTADOR < 10) THEN 
+            gosub CRONOMETRAR
+            gosub RANGO
+            pulsout LED_TAP,200
+        ENDIF
+		CONTADOR = 0                
+    endif       															
+			                           
+           
+''''''''''''''''''''''''''''''''''''''''''''''''                                                                                                      
+
+analogica:
+return
+
+CRONOMETRAR:        
+    T1CON.0 = 0        
+    IF CLICKS = 0 THEN	                                   
+    	TMR1H       = 0
+    	TMR1L       = 0
+    	DESBORDE    = 0
+    	T1CON.0		= 1
+		DUMMY.1 	= 1
+		CONTADOR	= 0            
+		for CONTADOR = 0 to 10 
+			VALOR[CONTADOR] = 0
+			BUCLE[CONTADOR] = 0            	
+		next				                                                                                                                                                                                         
+    ENDIF
+	IF CLICKS => 1 then    
+		VALOR.BYTE0[CLICKS-1]	= TMR1L
+     	VALOR.BYTE1[CLICKS-1]	= TMR1H                
+      	BUCLE[CLICKS-1]			= DESBORDE              		    	
+		TIEMPO		= 0
+		division	= 0
+	 	VALOR_PR    = 0            
+	 	BUCLE_PR    = 0
+		CONTADOR	= 1 	
+		FOR CONTADOR = 1 TO CLICKS
+	    	tiempo = TIEMPO + (VALOR.BYTE0[CONTADOR-1])                 
+	    	division = division + (VALOR.BYTE1[CONTADOR-1]) 
+	    	BUCLE_PR = (BUCLE_PR + BUCLE[CONTADOR-1])			 			            
+		NEXT		
+		valor_pr.BYTE0  = tiempo / CLICKS
+		valor_pr.BYTE1  = DIVISION / CLICKS
+		BUCLE_PR = BUCLE_PR / CLICKS											                                                                                                                                                                                                                 
+	 	if bucle_PR => 20 then 
+	  		bucle_PR    = 19
+	    	VALOR_PR    = 65530               
+		ENDIF
+		TMR1H		= 0
+		TMR1L		= 0            
+		DESBORDE	= 0                		
+		T1CON.0		= 1
+		DUMMY.1		= 1						                               
+		TIEMPO      = 3276 * BUCLE_PR
+		TIEMPO      = TIEMPO + (VALOR_PR / 20)		
+		DIVISION = TIEMPO        							
+	ENDIF	 
+	CLICKS = CLICKS + 1
+	IF CLICKS = 11 THEN CLICKS = 0				                                                                                                                                                            		                
+return
+
+RANGO:
+					
+	HPWM 1,DELAY,255									
+RETURN                        
+                             
+disable    
+INTERRUPCION:
+    contador = contador + 1
+    if contador = 168 then 
+        pulsout LED_TAP,100
+        contador = 0
+    endif                                                     				             								 														                                                                                               
+    INTCON.2 = 0 ; FLAG TMR0				                                                            
+RESUME
+ENABLE          
+
+END

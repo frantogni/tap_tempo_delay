@@ -1,0 +1,698 @@
+@__config _CONFIG1,0x2004
+@__config _CONFIG2,0x3fff
+  
+OSCCON      = %01110111 
+TRISA       = %00000001
+TRISB       = %00001000
+TRISC       = %01000000
+WPUB        = %00000000                 
+OPTION_REG  = %00000000
+INTCON      = %11000000		
+IOCB        = %00000000		
+PIE1        = %00000001             
+PIE2        = %00000000		
+PIR1        = %00000000
+PIR2        = %00000000
+ANSEL       = %00000001
+ANSELH      = %00000000
+ADCON0      = %10000001
+ADCON1      = %10000000
+CM1CON0     = %00100001		
+CM2CON0     = %00000000
+CM2CON1     = %00000000
+VRCON		= %00000000		
+SRCON       = %00000000
+T1CON       = %00000000
+CCP1CON     = %00001111
+CCP2CON     = %00000000
+ECCPAS      = %00000000
+PSTRCON     = %00000001
+SSPCON      = %00000101
+
+on interrupt goto interrupcion
+
+TAP_SW      VAR PORTC.6
+TBP_SW      VAR PORTB.3
+TBP         VAR PORTA.3
+TAIL        VAR PORTA.2
+MUTE		VAR PORTA.1
+LED_TAP     VAR PORTC.4
+LED_TBP     VAR PORTB.5
+
+DELAY       VAR BYTE
+TIEMPO      VAR WORD
+VALOR_PR    VAR WORD
+BUCLE_PR    VAR BYTE
+VALOR       VAR WORD[10]
+BUCLE       VAR BYTE[10]
+CLICKS      VAR BYTE
+DESBORDE    VAR BYTE
+DIVISION    VAR WORD
+ANA_TIE     VAR WORD
+AUX_TIE     VAR WORD
+CONTADOR    VAR BYTE
+DUMMY       VAR BYTE	;DUMMY.0=POTE DELAY/DIV, DUMMY.1 = FLASH, DUMMY.2=OCUPADO
+
+INICIO:
+    T1CON.0     = 0
+	PORTA		= 0
+	PORTB		= 0
+	PORTC		= 0
+    TAIL        = 1
+    mute        = 0                     
+    TIEMPO      = 65534    
+    BUCLE_PR    = 19
+    VALOR_PR    = 65530
+    DIVISION    = 0
+    ANA_TIE     = 0
+    AUX_TIE     = 10
+    CONTADOR    = 0    
+    DUMMY       = 0
+    CLICKS      = 0    
+    DESBORDE    = 0	                           
+    TMR1H       = 0
+    TMR1L       = 0                                                                                                         
+    T1CON.0     = 1	    
+
+MAIN:
+
+
+
+
+    IF TBP_SW = 0 THEN
+        if tbp = 1 then tail = 0
+AR_TBP: PAUSE 100
+        IF TBP_SW = 0 THEN AR_TBP
+  		MUTE = 1	    		
+  		TOGGLE TBP               				    		
+        PAUSE 50
+        MUTE = 0
+        led_tbp = tbp        
+ 		tail = tbp               					                                     
+	ENDIF	            
+    
+    if TAP_SW = 0 then
+		CONTADOR = 0    
+AR_TAP:	PAUSE 100
+        CONTADOR = CONTADOR + 1
+        IF CONTADOR => 10 THEN
+       	    lED_TAP	    = 1
+            GOSUB ANALOGICA
+            IF ((ANA_TIE < (AUX_TIE - 2))OR(ANA_TIE > (AUX_TIE + 2))) THEN 
+                AUX_TIE = ANA_TIE
+                select case ANA_TIE
+                    case is < 210       
+            	       DIVISION = (TIEMPO / 3)                                   
+                    case is < 600
+            	       DIVISION = (TIEMPO / 2)
+               	    case is < 925
+             	       DIVISION = (TIEMPO / 3) * 2      
+               	    case is < 980
+             	       DIVISION = (TIEMPO / 4) * 3       
+               	    case is => 980
+             	       DIVISION = TIEMPO              
+                end select
+            endif
+            gosub RANGO
+        endif
+		IF tap_sw = 0 THEN AR_TAP
+                    							   	                                                                            		
+        IF (CONTADOR => 10) THEN                        
+            TMR1H       = 0
+            TMR1L       = 0
+            DESBORDE    = 0
+            T1CON.0		= 1
+            lED_TAP	    = 0        
+        endif
+        
+        IF (CONTADOR < 10) THEN 
+            gosub CRONOMETRAR
+            gosub RANGO
+            pulsout LED_TAP,200
+        ENDIF
+		CONTADOR = 0                
+    endif
+    
+    IF (CLICKS = 0)AND(TBP = 1) THEN 
+        gosub analogica
+        IF ((ANA_TIE < (AUX_TIE - 5))OR(ANA_TIE > (AUX_TIE + 5))) THEN 
+            AUX_TIE = ANA_TIE                       
+            HPWM 1,(ANA_TIE / 4),255
+            T1CON.0     = 0
+        endif
+    ENDIF        															
+			
+FLASH:
+	IF (DUMMY.1 = 1) THEN
+UNO:	IF TMR1L < valor_pr.BYTE0 THEN UNO
+DOS:	IF TMR1H < valor_pr.byte1 then DOS                  
+		T1CON.0     = 0
+		DESBORDE    = 0                
+		TMR1H       = 0
+		TMR1L       = 0
+		T1CON.0     = 1
+		IF DUMMY.0  = 0 THEN pulsout LED_TAP,200 		
+		DUMMY.1 	= 0
+	ENDIF	
+	    																															 	                                                                                                                                     
+    GOTO MAIN                            
+           
+''''''''''''''''''''''''''''''''''''''''''''''''
+                                                                                                       
+ANALOGICA:    
+    ADRESH      = 0
+    ADRESL      = 0                
+    ADCON0.1    = 1
+    pause 1    
+LEC:if PIR1.6 = 0 then LEC
+    PIR1.6 = 0    
+    ANA_TIE = ADRESL + (255 * ADRESH)                       
+return
+
+
+CRONOMETRAR:        
+    T1CON.0 = 0        
+    IF CLICKS = 0 THEN	                                   
+    	TMR1H       = 0
+    	TMR1L       = 0
+    	DESBORDE    = 0
+    	T1CON.0		= 1
+		DUMMY.1 	= 1
+		CONTADOR	= 0            
+		for CONTADOR = 0 to 10 
+			VALOR[CONTADOR] = 0
+			BUCLE[CONTADOR] = 0            	
+		next				                                                                                                                                                                                         
+    ENDIF
+	IF CLICKS => 1 then    
+		VALOR.BYTE0[CLICKS-1]	= TMR1L
+     	VALOR.BYTE1[CLICKS-1]	= TMR1H                
+      	BUCLE[CLICKS-1]			= DESBORDE              		    	
+		TIEMPO		= 0
+		division	= 0
+	 	VALOR_PR    = 0            
+	 	BUCLE_PR    = 0
+		CONTADOR	= 1 	
+		FOR CONTADOR = 1 TO CLICKS
+	    	tiempo = TIEMPO + (VALOR.BYTE0[CONTADOR-1])                 
+	    	division = division + (VALOR.BYTE1[CONTADOR-1]) 
+	    	BUCLE_PR = (BUCLE_PR + BUCLE[CONTADOR-1])			 			            
+		NEXT		
+		valor_pr.BYTE0  = tiempo / CLICKS
+		valor_pr.BYTE1  = DIVISION / CLICKS
+		BUCLE_PR = BUCLE_PR / CLICKS											                                                                                                                                                                                                                 
+	 	if bucle_PR => 20 then 
+	  		bucle_PR    = 19
+	    	VALOR_PR    = 65530               
+		ENDIF
+		TMR1H		= 0
+		TMR1L		= 0            
+		DESBORDE	= 0                		
+		T1CON.0		= 1
+		DUMMY.1		= 1						                               
+		TIEMPO      = 3276 * BUCLE_PR
+		TIEMPO      = TIEMPO + (VALOR_PR / 20)		
+		DIVISION = TIEMPO        							
+	ENDIF	 
+	CLICKS = CLICKS + 1
+	IF CLICKS = 11 THEN CLICKS = 0				                                                                                                                                                            		                
+return
+
+RANGO:
+    select case DIVISION                					
+		case	is	<	5375
+			delay	=	30
+		case	is	<	5364
+			delay	=	31
+		case	is	<	5355
+			delay	=	32
+		case	is	<	5348
+			delay	=	33
+		case	is	<	5344
+			delay	=	34
+		case	is	<	5343
+			delay	=	35
+		case	is	<	5343
+			delay	=	36
+		case	is	<	5346
+			delay	=	37
+		case	is	<	5351
+			delay	=	38
+		case	is	<	5358
+			delay	=	39
+		case	is	<	5365
+			delay	=	40
+		case	is	<	5374
+			delay	=	41
+		case	is	<	5385
+			delay	=	42
+		case	is	<	5396
+			delay	=	43
+		case	is	<	5409
+			delay	=	44
+		case	is	<	5422
+			delay	=	45
+		case	is	<	5433
+			delay	=	46
+		case	is	<	5446
+			delay	=	47
+		case	is	<	5460
+			delay	=	48
+		case	is	<	5475
+			delay	=	49
+		case	is	<	5490
+			delay	=	50
+		case	is	<	5506
+			delay	=	51
+		case	is	<	5520
+			delay	=	52
+		case	is	<	5533
+			delay	=	53
+		case	is	<	5542
+			delay	=	54
+		case	is	<	5544
+			delay	=	55
+		case	is	<	5568
+			delay	=	56
+		case	is	<	5598
+			delay	=	57
+		case	is	<	5612
+			delay	=	58
+		case	is	<	5627
+			delay	=	59
+		case	is	<	5644
+			delay	=	60
+		case	is	<	5661
+			delay	=	61
+		case	is	<	5678
+			delay	=	62
+		case	is	<	5696
+			delay	=	63
+		case	is	<	5712
+			delay	=	64
+		case	is	<	5728
+			delay	=	65
+		case	is	<	5746
+			delay	=	66
+		case	is	<	5764
+			delay	=	67
+		case	is	<	5783
+			delay	=	68
+		case	is	<	5799
+			delay	=	69
+		case	is	<	5816
+			delay	=	70
+		case	is	<	5836
+			delay	=	71
+		case	is	<	5855
+			delay	=	72
+		case	is	<	5875
+			delay	=	73
+		case	is	<	5895
+			delay	=	74
+		case	is	<	5912
+			delay	=	75
+		case	is	<	5930
+			delay	=	76
+		case	is	<	5951
+			delay	=	77
+		case	is	<	5972
+			delay	=	78
+		case	is	<	5994
+			delay	=	79
+		case	is	<	6015
+			delay	=	80
+		case	is	<	6034
+			delay	=	81
+		case	is	<	6053
+			delay	=	82
+		case	is	<	6075
+			delay	=	83
+		case	is	<	6097
+			delay	=	84
+		case	is	<	6119
+			delay	=	85
+		case	is	<	6142
+			delay	=	86
+		case	is	<	6161
+			delay	=	87
+		case	is	<	6181
+			delay	=	88
+		case	is	<	6204
+			delay	=	89
+		case	is	<	6229
+			delay	=	90
+		case	is	<	6253
+			delay	=	91
+		case	is	<	6277
+			delay	=	92
+		case	is	<	6299
+			delay	=	93
+		case	is	<	6320
+			delay	=	94
+		case	is	<	6344
+			delay	=	95
+		case	is	<	6369
+			delay	=	96
+		case	is	<	6396
+			delay	=	97
+		case	is	<	6419
+			delay	=	98
+		case	is	<	6441
+			delay	=	99
+		case	is	<	6467
+			delay	=	100
+		case	is	<	6494
+			delay	=	101
+		case	is	<	6522
+			delay	=	102
+		case	is	<	6551
+			delay	=	103
+		case	is	<	6575
+			delay	=	104
+		case	is	<	6600
+			delay	=	105
+		case	is	<	6628
+			delay	=	106
+		case	is	<	6657
+			delay	=	107
+		case	is	<	6686
+			delay	=	108
+		case	is	<	6716
+			delay	=	109
+		case	is	<	6743
+			delay	=	110
+		case	is	<	6771
+			delay	=	111
+		case	is	<	6803
+			delay	=	112
+		case	is	<	6835
+			delay	=	113
+		case	is	<	6866
+			delay	=	114
+		case	is	<	6899
+			delay	=	115
+		case	is	<	6928
+			delay	=	116
+		case	is	<	6957
+			delay	=	117
+		case	is	<	6991
+			delay	=	118
+		case	is	<	7026
+			delay	=	119
+		case	is	<	7061
+			delay	=	120
+		case	is	<	7096
+			delay	=	121
+		case	is	<	7127
+			delay	=	122
+		case	is	<	7158
+			delay	=	123
+		case	is	<	7195
+			delay	=	124
+		case	is	<	7232
+			delay	=	125
+		case	is	<	7270
+			delay	=	126
+		case	is	<	7308
+			delay	=	127
+		case	is	<	7343
+			delay	=	128
+		case	is	<	7378
+			delay	=	129
+		case	is	<	7419
+			delay	=	130
+		case	is	<	7460
+			delay	=	131
+		case	is	<	7503
+			delay	=	132
+		case	is	<	7541
+			delay	=	133
+		case	is	<	7579
+			delay	=	134
+		case	is	<	7623
+			delay	=	135
+		case	is	<	7668
+			delay	=	136
+		case	is	<	7713
+			delay	=	137
+		case	is	<	7761
+			delay	=	138
+		case	is	<	7804
+			delay	=	139
+		case	is	<	7846
+			delay	=	140
+		case	is	<	7895
+			delay	=	141
+		case	is	<	7945
+			delay	=	142
+		case	is	<	7996
+			delay	=	143
+		case	is	<	8048
+			delay	=	144
+		case	is	<	8094
+			delay	=	145
+		case	is	<	8141
+			delay	=	146
+		case	is	<	8195
+			delay	=	147
+		case	is	<	8249
+			delay	=	148
+		case	is	<	8306
+			delay	=	149
+		case	is	<	8364
+			delay	=	150
+		case	is	<	8415
+			delay	=	151
+		case	is	<	8467
+			delay	=	152
+		case	is	<	8527
+			delay	=	153
+		case	is	<	8588
+			delay	=	154
+		case	is	<	8650
+			delay	=	155
+		case	is	<	8714
+			delay	=	156
+		case	is	<	8770
+			delay	=	157
+		case	is	<	8827
+			delay	=	158
+		case	is	<	8895
+			delay	=	159
+		case	is	<	8965
+			delay	=	160
+		case	is	<	9037
+			delay	=	161
+		case	is	<	9101
+			delay	=	162
+		case	is	<	9166
+			delay	=	163
+		case	is	<	9241
+			delay	=	164
+		case	is	<	9320
+			delay	=	165
+		case	is	<	9400
+			delay	=	166
+		case	is	<	9481
+			delay	=	167
+		case	is	<	9551
+			delay	=	168
+		case	is	<	9625
+			delay	=	169
+		case	is	<	9711
+			delay	=	170
+		case	is	<	9798
+			delay	=	171
+		case	is	<	9887
+			delay	=	172
+		case	is	<	9979
+			delay	=	173
+		case	is	<	10061
+			delay	=	174
+		case	is	<	10145
+			delay	=	175
+		case	is	<	10243
+			delay	=	176
+		case	is	<	10343
+			delay	=	177
+		case	is	<	10446
+			delay	=	178
+		case	is	<	10553
+			delay	=	179
+		case	is	<	10649
+			delay	=	180
+		case	is	<	10748
+			delay	=	181
+		case	is	<	10863
+			delay	=	182
+		case	is	<	10982
+			delay	=	183
+		case	is	<	11103
+			delay	=	184
+		case	is	<	11227
+			delay	=	185
+		case	is	<	11339
+			delay	=	186
+		case	is	<	11453
+			delay	=	187
+		case	is	<	11586
+			delay	=	188
+		case	is	<	11723
+			delay	=	189
+		case	is	<	11864
+			delay	=	190
+		case	is	<	12010
+			delay	=	191
+		case	is	<	12142
+			delay	=	192
+		case	is	<	12279
+			delay	=	193
+		case	is	<	12438
+			delay	=	194
+		case	is	<	12602
+			delay	=	195
+		case	is	<	12772
+			delay	=	196
+		case	is	<	12923
+			delay	=	197
+		case	is	<	13080
+			delay	=	198
+		case	is	<	13263
+			delay	=	199
+		case	is	<	13452
+			delay	=	200
+		case	is	<	13648
+			delay	=	201
+		case	is	<	13850
+			delay	=	202
+		case	is	<	14032
+			delay	=	203
+		case	is	<	14218
+			delay	=	204
+		case	is	<	14440
+			delay	=	205
+		case	is	<	14666
+			delay	=	206
+		case	is	<	14900
+			delay	=	207
+		case	is	<	15148
+			delay	=	208
+		case	is	<	15373
+			delay	=	209
+		case	is	<	15606
+			delay	=	210
+		case	is	<	15882
+			delay	=	211
+		case	is	<	16165
+			delay	=	212
+		case	is	<	16460
+			delay	=	213
+		case	is	<	16766
+			delay	=	214
+		case	is	<	17045
+			delay	=	215
+		case	is	<	17335
+			delay	=	216
+		case	is	<	17675
+			delay	=	217
+		case	is	<	18030
+			delay	=	218
+		case	is	<	18401
+			delay	=	219
+		case	is	<	18787
+			delay	=	220
+		case	is	<	19139
+			delay	=	221
+		case	is	<	19509
+			delay	=	222
+		case	is	<	19947
+			delay	=	223
+		case	is	<	20407
+			delay	=	224
+		case	is	<	20886
+			delay	=	225
+		case	is	<	21324
+			delay	=	226
+		case	is	<	21784
+			delay	=	227
+		case	is	<	22338
+			delay	=	228
+		case	is	<	22920
+			delay	=	229
+		case	is	<	23532
+			delay	=	230
+		case	is	<	24181
+			delay	=	231
+		case	is	<	24777
+			delay	=	232
+		case	is	<	25410
+			delay	=	233
+		case	is	<	26167
+			delay	=	234
+		case	is	<	26973
+			delay	=	235
+		case	is	<	27825
+			delay	=	236
+		case	is	<	28731
+			delay	=	237
+		case	is	<	29573
+			delay	=	238
+		case	is	<	30473
+			delay	=	239
+		case	is	<	31562
+			delay	=	240
+		case	is	<	32728
+			delay	=	241
+		case	is	<	33977
+			delay	=	242
+		case	is	<	35317
+			delay	=	243
+		case	is	<	36566
+			delay	=	244
+		case	is	<	37916
+			delay	=	245
+		case	is	<	39576
+			delay	=	246
+		case	is	<	41372
+			delay	=	247
+		case	is	<	43315
+			delay	=	248
+		case	is	<	45451
+			delay	=	249
+		case	is	<	47482
+			delay	=	250
+		case	is	<	49676
+			delay	=	251
+		case	is	<	52428
+			delay	=	252
+		case	is	<	55521
+			delay	=	253
+		case	is	<	61010
+			delay	=	254
+		case	is	>	61010
+			delay	=	255
+    end select					
+	HPWM 1,DELAY,255									
+RETURN                        
+                             
+disable    
+INTERRUPCION:                                       
+    if ((PIE1.0 = 1) AND (PIR1.0 = 1)) THEN
+        DESBORDE = DESBORDE + 1
+        IF (DESBORDE = BUCLE_PR) AND (CLICKS = 0) THEN DUMMY.1 = 1        
+        IF (DESBORDE > 30) THEN
+            T1CON.0 	= 0				    
+            TMR1H		= 0
+            TMR1L		= 0            
+            DESBORDE	= 0
+            T1CON.0		= 1
+			DUMMY.1		= 1
+			CLICKS		= 0									 									
+		ENDIF					                                                                                               
+        PIR1.0 = 0 
+    ENDIF				                                                            
+RESUME
+ENABLE          
+
+END

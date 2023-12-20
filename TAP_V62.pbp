@@ -1,0 +1,252 @@
+@ __CONFIG _CONFIG1, 0x23C4
+@ __CONFIG _CONFIG2, 0x0700          
+
+OSCCON      = %01110111 
+TRISA       = %00010001
+TRISB       = %00000011
+TRISC       = %00000000
+WPUB        = %00000000                 
+OPTION_REG  = %10100011
+INTCON      = %11100000		
+IOCB        = %00000000		
+PIE1        = %00000001             
+PIE2        = %00000000		
+PIR1        = %00000000
+PIR2        = %00000000
+ANSEL       = %00000001
+ANSELH      = %00000000
+ADCON0      = %11000001
+ADCON1      = %10000000
+CM1CON0     = %00000000		
+CM2CON0     = %00000000
+CM2CON1     = %00000000
+VRCON		= %00000000		
+SRCON       = %00000000
+T1CON       = %00000000
+CCP1CON     = %00001100
+CCP2CON     = %00000000
+ECCPAS      = %00000000
+PSTRCON     = %00000001
+SSPCON      = %00000101
+
+on interrupt goto interrupcion
+
+DEFINE  LCD_DREG    PORTC
+DEFINE  LCD_DBIT    4
+DEFINE  LCD_RSREG   PORTC
+DEFINE  LCD_RSBIT   0
+DEFINE  LCD_EREG    PORTC
+DEFINE  LCD_EBIT    1
+DEFINE  LCD_BITS    4
+DEFINE  LCD_LINES   2
+
+TBP_SW      VAR PORTB.0
+TAP_SW      VAR PORTB.1
+TAIL        VAR PORTB.2
+TBP         VAR PORTB.3
+LED_TAP     VAR PORTA.7
+
+ADC_A       VAR WORD
+ADC_L       VAR WORD
+VALOR       VAR WORD[10]
+BUCLE       VAR BYTE[10]
+VALOR_P     VAR WORD
+BUCLE_P     VAR BYTE
+CONTADOR    VAR BYTE
+CONT_TAP    VAR BYTE
+DELAY       VAR BYTE
+CLICKS      VAR BYTE
+AUX_1       VAR WORD
+AUX_2       VAR WORD
+AUX_3       VAR BYTE
+CONT_ATR    VAR BYTE
+
+DESBORDE    VAR BYTE
+TAIL_ACT    VAR BIT
+DIVI_ACT    VAR BIT
+TIEMPO_TAP  VAR WORD
+TIEMPO_CLK  VAR WORD
+TIMER1      VAR WORD
+CORREGIR    VAR BIT
+cont_act    var byte
+
+INICIO:
+
+	PORTA		= 0
+	PORTB		= 0
+	PORTC		= 0
+    TAIL        = 1
+    TBP         = 1                        
+    BUCLE_P     = 19
+    VALOR_P     = 65530
+    adc_a       = 0
+    adc_l       = 100
+    CONTADOR    = 0
+    CLICKS      = 0        	                           
+    TMR1H       = 0
+    TMR1L       = 0    
+    DESBORDE    = 0
+    TAIL_ACT    = 0
+    DIVI_ACT    = 0
+    CONT_TAP    = 0
+    AUX_1       = 0
+    AUX_2       = 0
+    AUX_3       = 0
+    CONT_ATR    = 0
+    TIEMPO_TAP  = 0
+    TIEMPO_CLK  = 0
+    TIMER1      = 0
+    CORREGIR    = 0
+    cont_act    = 0
+    delay       = 255    
+                                                                                                             
+    HPWM 1,delay,10000
+    PAUSE 500	    
+    lcdout $FE,1
+
+MAIN:
+
+    IF TBP_SW = 1 THEN
+AR_TBP: pause 100
+        CONT_ATR = CONT_ATR + 1
+        IF TBP_SW = 1 THEN GOTO AR_TBP
+        IF CONT_ATR > 10 THEN TOGGLE TAIL_ACT	    		
+        IF CONT_ATR < 10 THEN 
+            TOGGLE TAIL
+            IF TAIL_ACT = 0 THEN TBP = TAIL
+            IF TAIL_ACT = 1 THEN TBP = 0
+        ENDIF
+        CONT_ATR = 0                                         				    		             					                                     
+	ENDIF
+	
+    IF TAP_SW = 1 THEN
+AR_TAP: pause 100
+        CONT_ATR = CONT_ATR + 1
+        IF TAP_SW = 1 THEN GOTO AR_TAP      
+        pulsout led_tap,100
+        T1CON.0 = 0               
+        IF CLICKS = 0 THEN
+            INTCON.5    = 0	                                   
+            TMR1H       = 0
+            TMR1L       = 0
+            DESBORDE    = 0
+            T1CON.0		= 1
+            CONT_TAP	= 0            
+            for CONT_TAP = 0 to 10 
+                VALOR[CONT_tap] = 0
+                BUCLE[CONT_tap] = 0            	
+            next				                                                                                                                                                                                         
+        ENDIF
+        IF CLICKS => 1 then    
+            VALOR.BYTE0[CLICKS-1]	= TMR1L
+            VALOR.BYTE1[CLICKS-1]	= TMR1H                
+            BUCLE[CLICKS-1]			= DESBORDE              		    	
+            AUX_1		= 0
+            AUX_2   	= 0
+            VALOR_P     = 0            
+            BUCLE_P     = 0
+            CONT_TAP	= 1 	
+            FOR CONT_TAP = 1 TO CLICKS
+                AUX_1       = AUX_1 + (VALOR.BYTE0[CONT_TAP - 1])                 
+                AUX_2       = AUX_2 + (VALOR.BYTE1[CONT_TAP - 1]) 
+                BUCLE_P     = BUCLE_P + BUCLE[CONT_TAP-1]			 			            
+            NEXT		
+            valor_p.BYTE0   = AUX_1 / CLICKS
+            valor_p.BYTE1   = AUX_2 / CLICKS
+            BUCLE_P         = BUCLE_P / CLICKS
+                                             											                                                                                                                                                                                                                 
+            if bucle_P => 20 then 
+                bucle_P    = 19
+                VALOR_P    = 65530               
+            ENDIF
+                
+            TMR1H		= 0
+            TMR1L		= 0            
+            DESBORDE	= 0                		
+            T1CON.0		= 1						                               
+            TIEMPO_TAP  = 3276 * BUCLE_P
+            TIEMPO_TAP  = TIEMPO_TAP + (VALOR_P / 20)                       		
+                
+            LCDOUT $FE,$80,DEC TIEMPO_TAP
+                       							
+        ENDIF	 
+        CLICKS = CLICKS + 1
+        CONT_ATR = 0                    
+        IF CLICKS = 11 THEN CLICKS = 0
+        lcdout $fe,$88,dec2 clicks                                                    				    		             					                                     
+	ENDIF
+	
+    IF CLICKS = 0 THEN 
+        ADRESH      = 0
+        ADRESL      = 0                
+        ADCON0.1    = 1   
+LEC:    if PIR1.6 = 0 then LEC
+        PIR1.6 = 0                
+        adc_a = 0
+        adc_a = ADRESH * 255 
+        adc_a = adc_a + ADRESL              
+        if adc_a < (adc_l - 2) or adc_a > (adc_l + 2) then
+            corregir = 0
+            adc_l = adc_a        
+            delay = adc_a / 4                              
+            HPWM 1,delay,10000
+            lcdout $fe,$8D,dec3 delay,$fe,$CC,dec4 adc_A
+        endif
+    ENDIF 	
+    
+    goto MAIN       															
+			                           
+           
+''''''''''''''''''''''''''''''''''''''''''''''''                                                                                                      
+                                                  
+disable    
+INTERRUPCION:
+    IF INTCON.2 = 1 THEN        
+        contador = contador + 1
+        if contador = 168 then  
+            pulsout LED_TAP,100
+            T1CON.0 = 0
+            TIMER1.BYTE0 = TMR1L
+            TIMER1.BYTE1 = TMR1H
+            AUX_3 = DESBORDE
+            TMR1H = 0
+            TMR1L = 0
+            DESBORDE = 0
+            T1CON.0 = 1                        
+            TIEMPO_CLK = 3276 * AUX_3
+            TIEMPO_CLK = TIEMPO_CLK + (TIMER1 / 20)
+            
+            if corregir = 1 then
+                if (tiempo_clk / 100) < ((tiempo_tap / 100) - 100) then delay = delay + 10
+                if (tiempo_clk / 100) < ((tiempo_tap / 100) - 50) then delay = delay + 5                
+                if (tiempo_clk / 100) < ((tiempo_tap / 100) - 2) then delay = delay + 1
+                if (tiempo_clk / 100) > ((tiempo_tap / 100) + 100) then delay = delay - 10                
+                if (tiempo_clk / 100) > ((tiempo_tap / 100) + 50) then delay = delay - 5
+                if (tiempo_clk / 100) > ((tiempo_tap / 100) + 2) then delay = delay - 1                
+                
+                hpwm 1,delay,10000                                
+                
+                if (tiempo_clk / 100) < ((tiempo_tap / 100) + 2) and (tiempo_clk / 100) > ((tiempo_tap / 100) - 2) then corregir = 0
+                
+            endif
+                                        
+            LCDOUT $FE,$C0,DEC5 TIEMPO_CLK                            
+            contador = 0          
+        endif      
+    ENDIF
+    
+    IF PIR1.0 = 1 THEN 
+        DESBORDE = DESBORDE + 1
+        IF DESBORDE > 25 THEN
+            DESBORDE    = 0
+            if clicks > 1 then corregir = 1
+            CLICKS      = 0
+            INTCON.5    = 1
+        ENDIF
+    ENDIF                                                             				             								 														                                                                                               
+    INTCON.2    = 0 ; FLAG TMR0
+    PIR1.0      = 0 ; FLAG TMR1  				                                                            
+RESUME
+ENABLE          
+
+END
